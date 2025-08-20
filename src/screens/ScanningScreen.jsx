@@ -17,6 +17,8 @@ const ScanningScreen = () => {
   const navigation = useNavigation();
   const [devices, setDevices] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingDeviceId, setConnectingDeviceId] = useState(null);
 
   useEffect(() => {
     requestPermissions();
@@ -28,81 +30,179 @@ const ScanningScreen = () => {
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
       try {
-        const granted = await PermissionsAndroid.requestMultiple([
+        const permissions = [
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        ]);
+        ];
+
+        // Add Bluetooth permissions for Android 12+
+        if (Platform.Version >= 31) {
+          permissions.push(
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
+          );
+        }
+
+        const granted = await PermissionsAndroid.requestMultiple(permissions);
 
         const allGranted = Object.values(granted).every(
           permission => permission === PermissionsAndroid.RESULTS.GRANTED
         );
 
         if (allGranted) {
+          console.log('All permissions granted');
+          // Auto-start scanning
           startScanning();
         } else {
-          Alert.alert('Permissions Required', 'Please grant all permissions to scan for devices');
+          Alert.alert(
+            'Permissions Required', 
+            'Please grant all permissions to scan for devices',
+            [
+              { text: 'OK', onPress: () => console.log('Permissions denied') }
+            ]
+          );
         }
       } catch (err) {
-        console.warn(err);
+        console.warn('Permission request error:', err);
+        Alert.alert('Error', 'Failed to request permissions');
       }
     } else {
+      // iOS - start scanning directly
       startScanning();
     }
   };
 
-  const startScanning = () => {
-  setIsScanning(true);
-  setDevices([]);
- 
-  BleService.startScan((foundDevices) => {
-    console.log('Devices found:', foundDevices.length);
-    setDevices(foundDevices);
-  });
+  const startScanning = async () => {
+    if (isScanning) return;
 
-  
-  setTimeout(() => {
-    console.log('Stopping scan...');
-    BleService.stopScan();
-    setIsScanning(false);
-  }, 10000);
-};
-
-  const handleDevicePress = async (device) => {
     try {
-      BleService.stopScan();
-      setIsScanning(false);
-      const connectedDevice = await BleService.connectToDevice(device.id);
-      navigation.navigate('Connection', { device: connectedDevice });
+      setIsScanning(true);
+      setDevices([]);
+      console.log('Starting device scan...');
+
+      await BleService.startScan((foundDevices) => {
+        console.log('Devices found:', foundDevices.length);
+        setDevices(foundDevices);
+      });
+
+      // Auto-stop scan after 15 seconds
+      setTimeout(() => {
+        if (isScanning) {
+          console.log('Auto-stopping scan after 15 seconds...');
+          stopScanning();
+        }
+      }, 15000);
+
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect to device: ' + error.message);
+      console.error('Scan start error:', error);
+      Alert.alert('Scan Error', `Failed to start scanning: ${error.message}`);
+      setIsScanning(false);
     }
   };
 
-  const renderDevice = ({ item }) => (
-    <TouchableOpacity style={styles.deviceItem} onPress={() => handleDevicePress(item)}>
-      <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{item.name || `Device ${item.id.substring(0, 8)}`}</Text>
-        <Text style={styles.deviceId}>ID: {item.id}</Text>
-        <Text style={styles.deviceRssi}>Signal: {item.rssi || 'N/A'} dBm</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const stopScanning = () => {
+    console.log('Stopping scan...');
+    BleService.stopScan();
+    setIsScanning(false);
+  };
+
+  const handleDevicePress = async (device) => {
+    if (isConnecting) {
+      Alert.alert('Please Wait', 'Already connecting to a device...');
+      return;
+    }
+
+    try {
+      // Stop scanning first
+      stopScanning();
+      
+      setIsConnecting(true);
+      setConnectingDeviceId(device.id);
+      
+      console.log('Attempting to connect to device:', device.name || device.id);
+
+      // Connect to the device
+      const connectedDevice = await BleService.connectToDevice(device.id);
+      
+      console.log('Successfully connected, navigating to Connection screen');
+      
+      // Navigate to connection screen with the connected device
+      navigation.navigate('Connection', { 
+        device: connectedDevice,
+        deviceInfo: device // Also pass original device info
+      });
+
+    } catch (error) {
+      console.error('Connection error:', error);
+      Alert.alert(
+        'Connection Failed', 
+        `Failed to connect to ${device.name || 'device'}: ${error.message}`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsConnecting(false);
+      setConnectingDeviceId(null);
+    }
+  };
+
+  const renderDevice = ({ item }) => {
+    const isConnectingToThis = connectingDeviceId === item.id;
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.deviceItem,
+          isConnectingToThis && styles.deviceItemConnecting
+        ]} 
+        onPress={() => handleDevicePress(item)}
+        disabled={isConnecting}
+      >
+        <View style={styles.deviceInfo}>
+          <Text style={styles.deviceName}>
+            {item.name || `Device ${item.id.substring(0, 8)}`}
+          </Text>
+          <Text style={styles.deviceId}>ID: {item.id}</Text>
+          <Text style={styles.deviceRssi}>
+            Signal: {item.rssi !== null ? `${item.rssi} dBm` : 'Unknown'}
+          </Text>
+         
+        </View>
+        
+        {isConnectingToThis && (
+          <View style={styles.connectingIndicator}>
+            <ActivityIndicator size="small" color="#007AFF" />
+            <Text style={styles.connectingText}>Connecting...</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>BLE Device Scanner</Text>
+        <Text style={styles.title}>Nordic UART Scanner</Text>
+        <Text style={styles.subtitle}>
+          Scanning for devices with Nordic UART Service
+        </Text>
+        
         <TouchableOpacity
-          style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
-          onPress={startScanning}
-          disabled={isScanning}
+          style={[
+            styles.scanButton, 
+            (isScanning || isConnecting) && styles.scanButtonDisabled
+          ]}
+          onPress={isScanning ? stopScanning : startScanning}
+          disabled={isConnecting}
         >
           {isScanning ? (
-            <ActivityIndicator color="#fff" />
+            <View style={styles.scanButtonContent}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.scanButtonText}>Stop Scan</Text>
+            </View>
           ) : (
-            <Text style={styles.scanButtonText}>Scan Devices</Text>
+            <Text style={styles.scanButtonText}>
+              {devices.length > 0 ? 'Scan Again' : 'Start Scan'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -110,7 +210,18 @@ const ScanningScreen = () => {
       {isScanning && (
         <View style={styles.scanningIndicator}>
           <ActivityIndicator size="small" color="#007AFF" />
-          <Text style={styles.scanningText}>Scanning for devices...</Text>
+          <Text style={styles.scanningText}>
+            Scanning for Nordic UART devices...
+          </Text>
+        </View>
+      )}
+
+      {isConnecting && (
+        <View style={styles.connectingIndicator}>
+          <ActivityIndicator size="small" color="#FF6B35" />
+          <Text style={styles.connectingText}>
+            Connecting to device...
+          </Text>
         </View>
       )}
 
@@ -121,10 +232,28 @@ const ScanningScreen = () => {
         contentContainerStyle={styles.deviceList}
         ListEmptyComponent={
           !isScanning ? (
-            <Text style={styles.emptyText}>No devices found. Tap "Scan Devices" to start.</Text>
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {devices.length === 0 
+                  ? 'No Nordic UART devices found.\nTap "Start Scan" to search for devices.' 
+                  : 'No devices found'
+                }
+              </Text>
+            </View>
           ) : null
         }
       />
+      
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>
+          Found {devices.length} device{devices.length !== 1 ? 's' : ''}
+        </Text>
+        {devices.length > 0 && !isScanning && (
+          <Text style={styles.footerHint}>
+            Tap a device to connect
+          </Text>
+        )}
+      </View>
     </View>
   );
 };
@@ -137,44 +266,151 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#1C2526', marginBottom: 15 },
-  scanButton: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8, alignItems: 'center' },
+  title: { 
+    fontSize: 24, 
+    fontWeight: 'bold', 
+    color: '#1C2526', 
+    marginBottom: 5 
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 15,
+  },
+  scanButton: { 
+    backgroundColor: '#007AFF', 
+    padding: 15, 
+    borderRadius: 8, 
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
   scanButtonDisabled: { backgroundColor: '#A0A0A0' },
-  scanButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  scanButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scanButtonText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   scanningIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 15,
-    backgroundColor: '#fff',
+    backgroundColor: '#E3F2FD',
     marginHorizontal: 20,
     marginTop: 10,
     borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
   },
-  scanningText: { marginLeft: 10, fontSize: 14, color: '#666' },
-  deviceList: { padding: 20 },
+  scanningText: { 
+    marginLeft: 10, 
+    fontSize: 14, 
+    color: '#1976D2',
+    fontWeight: '500',
+  },
+  connectingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    backgroundColor: '#FFF3E0',
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  connectingText: { 
+    marginLeft: 10, 
+    fontSize: 14, 
+    color: '#F57C00',
+    fontWeight: '500',
+  },
+  deviceList: { 
+    padding: 20,
+    flexGrow: 1,
+  },
   deviceItem: {
     backgroundColor: '#fff',
     padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
+    borderRadius: 12,
+    marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  deviceItemConnecting: {
+    borderLeftColor: '#FF9800',
+    backgroundColor: '#FFF8E1',
   },
   deviceInfo: { flex: 1 },
-  deviceName: { fontSize: 18, fontWeight: '600', color: '#1C2526', marginBottom: 4 },
-  deviceId: { fontSize: 12, color: '#666', marginBottom: 2 },
-  deviceRssi: { fontSize: 12, color: '#666' },
-  emptyText: { textAlign: 'center', fontSize: 16, color: '#666', marginTop: 50 },
+  deviceName: { 
+    fontSize: 18, 
+    fontWeight: '600', 
+    color: '#1C2526', 
+    marginBottom: 6 
+  },
+  deviceId: { 
+    fontSize: 12, 
+    color: '#666', 
+    marginBottom: 4,
+    fontFamily: 'monospace',
+  },
+  deviceRssi: { 
+    fontSize: 12, 
+    color: '#666',
+    marginBottom: 4,
+  },
+  deviceConnectable: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  emptyText: { 
+    textAlign: 'center', 
+    fontSize: 16, 
+    color: '#666', 
+    lineHeight: 24,
+  },
+  footer: {
+    padding: 20,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  footerHint: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+  },
 });
 
 export default ScanningScreen;
