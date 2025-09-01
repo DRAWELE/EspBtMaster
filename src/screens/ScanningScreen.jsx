@@ -77,6 +77,7 @@ const ScanningScreen = () => {
 
     try {
       setIsScanning(true);
+      
       setDevices([]);
       console.log('Starting device scan...');
 
@@ -86,11 +87,9 @@ const ScanningScreen = () => {
       });
 
       // Auto-stop scan after 15 seconds
-      setTimeout(() => {
-        if (isScanning) {
+      setTimeout(() => { 
           console.log('Auto-stopping scan after 15 seconds...');
-          stopScanning();
-        }
+          stopScanning(); 
       }, 15000);
 
     } catch (error) {
@@ -114,7 +113,7 @@ const ScanningScreen = () => {
 
     try {
       // Stop scanning first
-      stopScanning();
+      // stopScanning();
       
       setIsConnecting(true);
       setConnectingDeviceId(device.id);
@@ -181,9 +180,9 @@ const ScanningScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Nordic UART Scanner</Text>
+        <Text style={styles.title}>BLE Scanner</Text>
         <Text style={styles.subtitle}>
-          Scanning for devices with Nordic UART Service
+          Scanning for devices
         </Text>
         
         <TouchableOpacity
@@ -211,7 +210,7 @@ const ScanningScreen = () => {
         <View style={styles.scanningIndicator}>
           <ActivityIndicator size="small" color="#007AFF" />
           <Text style={styles.scanningText}>
-            Scanning for Nordic UART devices...
+            Scanning for BLE devices...
           </Text>
         </View>
       )}
@@ -235,7 +234,7 @@ const ScanningScreen = () => {
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 {devices.length === 0 
-                  ? 'No Nordic UART devices found.\nTap "Start Scan" to search for devices.' 
+                  ? 'Tap "Start Scan" to search for devices.' 
                   : 'No devices found'
                 }
               </Text>
