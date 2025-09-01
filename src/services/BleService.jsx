@@ -37,10 +37,10 @@ const startScan = async (onDeviceFound) => {
     await initBle();
     
     // Stop any existing scan
-    stopScan(); 
+    // stopScan(); 
     devices.clear();
 
-    console.log('Starting BLE scan for Nordic UART devices...');
+    console.log('Starting BLE scan for devices...');
 
     scanSubscription = bleManager.startDeviceScan(
       [NUS_SERVICE_UUID], // Filter for Nordic UART Service
@@ -280,6 +280,3 @@ export default {
   NUS_RX_CHARACTERISTIC_UUID,
   NUS_TX_CHARACTERISTIC_UUID,
 };
-
-
-// Jaivik 1
