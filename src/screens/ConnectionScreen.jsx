@@ -5,10 +5,14 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  BackHandler,
   StyleSheet,
   Alert,
 } from 'react-native';
-import BleService from '../services/BleService';
+import  BleService from '../services/BleService';
+import  bleManager from '../services/BleService';
+
+
 
 const ConnectionScreen = ({ route, navigation }) => {
   const { device } = route.params;
@@ -106,16 +110,41 @@ const ConnectionScreen = ({ route, navigation }) => {
     };
   }, [device.id, navigation]);
 
+  
+const disableNotifications = () => {
+  if (subscription) {
+
+    device.monitorCharacteristicForService();
+    subscription.remove();
+    subscription = null;
+    console.log("Notifications disabled");
+  }
+};
+
   const cleanup = async () => {
     try {
       if (subscription) {
-        subscription.remove();
-        setSubscription(null);
+        console.log("Subscription object:", subscription);
+        // disableNotifications();
+        // subscription.remove();
+        // setSubscription(null);
+      //  subscription.unsubscribe(); // for RxJS-style subs
       }
       
       if (connectedDevice && isConnected) {
-        console.log('Disconnecting from device...');
-        await BleService.bleManager.cancelDeviceConnection(device.id);
+        console.log(`Disconnecting from device... ${connectedDevice.id}`);
+        // await BleService.disconnectDevice(connectedDevice.id);
+            //  await bleManager();
+        setSubscription(null);
+        
+        console.log("Notifications disabled");
+            //  setConnectedDevice(null); // Clear the connected device from state
+        // await BleService.disconnectDevice(connectedDevice.id);
+
+        // await BleService.bleManager.cancelDeviceConnection(connectedDevice.id);
+        // await BleService.disconnectDevice(connectedDevice.id);
+                
+        // await BleService.bleManager.cancelDeviceConnection(connectedDevice.id);
         console.log('Device disconnected');
       }
     } catch (error) {
@@ -163,6 +192,38 @@ const ConnectionScreen = ({ route, navigation }) => {
     }
   };
 
+
+  useEffect(() => {
+    const backAction = () => {
+      Alert.alert(
+        "Exit",
+        "Are you sure you want to Move to scanning page?",
+        [
+          {
+            text: "Cancel",
+            onPress: () => null,
+            style: "cancel"
+          },
+          {
+            text: "YES",
+            onPress: () => navigation.goBack()
+          }
+        ]
+      );
+      return true; // prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+ 
+
+
 const disconnect = () => {
   Alert.alert('Disconnect', 'Are you sure you want to disconnect?', [
     { text: 'Cancel' },
@@ -173,7 +234,7 @@ const disconnect = () => {
           await cleanup(); // Perform cleanup
           setIsConnected(false); // Update connection state
           setLogs(prevLogs => [...prevLogs, { type: 'info', text: 'Disconnected' }]);
-          navigation.replace('Scanning'); // Navigate to Scanning screen
+          // navigation.replace('Scanning'); // Navigate to Scanning screen
         } catch (error) {
           console.error('Disconnect error:', error);
           setLogs(prevLogs => [...prevLogs, { type: 'error', text: `Disconnect failed: ${error.message}` }]);
