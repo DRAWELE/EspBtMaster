@@ -280,3 +280,6 @@ export default {
   NUS_RX_CHARACTERISTIC_UUID,
   NUS_TX_CHARACTERISTIC_UUID,
 };
+
+
+// Jaivik 1
