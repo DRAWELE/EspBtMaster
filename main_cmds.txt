@@ -1,0 +1,15 @@
+
+
+ADB Commands:
+adb reverse tcp:8081 tcp:8081
+adb kill-server
+adb start-server
+adb devices
+
+Debugging commands:
+npx react-native log-android
+adb logcat *:S ReactNative:V ReactNativeJS:V
+
+Run cocmmands:
+npm install
+npx react-native run-android 

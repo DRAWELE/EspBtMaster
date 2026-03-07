@@ -177,17 +177,12 @@ const writeCharacteristic = async (device, serviceUUID, characteristicUUID, data
     if (!device || !serviceUUID || !characteristicUUID || !data) {
       throw new Error('Invalid parameters for write operation');
     }
-
-    console.log('Writing to characteristic:', characteristicUUID);
-    console.log('Data to write:', atob(data)); // Log the actual string being sent
     
     await device.writeCharacteristicWithResponseForService(
       serviceUUID,
       characteristicUUID,
       data
     );
-    
-    console.log('Write successful');
   } catch (error) {
     console.error('Write characteristic failed:', error.message);
     throw new Error(`Write failed: ${error.message}`);

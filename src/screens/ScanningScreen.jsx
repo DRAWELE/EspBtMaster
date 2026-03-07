@@ -9,6 +9,7 @@ import {
   Alert,
   PermissionsAndroid,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import BleService from '../services/BleService';
@@ -22,8 +23,27 @@ const ScanningScreen = () => {
 
   useEffect(() => {
     requestPermissions();
+    
+    const backAction = () => {
+      Alert.alert(
+        "Exit App",
+        "Do you really want to exit?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Yes", onPress: () => BackHandler.exitApp() }
+        ]
+      );
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+
     return () => {
       BleService.stopScan();
+      backHandler.remove();
     };
   }, []);
 
@@ -182,7 +202,7 @@ const ScanningScreen = () => {
       <View style={styles.header}>
         <Text style={styles.title}>BLE Scanner</Text>
         <Text style={styles.subtitle}>
-          Scanning for devices
+          Find and connect to nearby BLE devices
         </Text>
         
         <TouchableOpacity
@@ -194,13 +214,10 @@ const ScanningScreen = () => {
           disabled={isConnecting}
         >
           {isScanning ? (
-            <View style={styles.scanButtonContent}>
-              <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.scanButtonText}>Stop Scan</Text>
-            </View>
+            <Text style={styles.scanButtonText}>Stop Scan</Text>
           ) : (
             <Text style={styles.scanButtonText}>
-              {devices.length > 0 ? 'Scan Again' : 'Start Scan'}
+              Scan for devices
             </Text>
           )}
         </TouchableOpacity>
@@ -211,15 +228,6 @@ const ScanningScreen = () => {
           <ActivityIndicator size="small" color="#007AFF" />
           <Text style={styles.scanningText}>
             Scanning for BLE devices...
-          </Text>
-        </View>
-      )}
-
-      {isConnecting && (
-        <View style={styles.connectingIndicator}>
-          <ActivityIndicator size="small" color="#FF6B35" />
-          <Text style={styles.connectingText}>
-            Connecting to device...
           </Text>
         </View>
       )}
@@ -245,9 +253,9 @@ const ScanningScreen = () => {
       
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          Found {devices.length} device{devices.length !== 1 ? 's' : ''}
+          {devices.length} device{devices.length !== 1 ? 's' : ''} Found
         </Text>
-        {devices.length > 0 && !isScanning && (
+        {devices.length > 0 && (
           <Text style={styles.footerHint}>
             Tap a device to connect
           </Text>
@@ -308,7 +316,6 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: '#E3F2FD',
     marginHorizontal: 20,
-    marginTop: 10,
     borderRadius: 8,
     borderLeftWidth: 4,
     borderLeftColor: '#2196F3',

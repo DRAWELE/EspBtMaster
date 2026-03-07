@@ -4,10 +4,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
+  ScrollView,
   BackHandler,
   StyleSheet,
   Alert,
+  Modal,
 } from 'react-native';
 import  BleService from '../services/BleService';
 import  bleManager from '../services/BleService';
@@ -18,82 +19,106 @@ const ConnectionScreen = ({ route, navigation }) => {
   const { device } = route.params;
   const [logs, setLogs] = useState([]);
   const [inputText, setInputText] = useState('');
-  const [quickButtons, setQuickButtons] = useState(['Hi', 'Hello', 'AT']);
+  const [quickButtons, setQuickButtons] = useState(['CMD-1', 'CMD-2', 'CMD-3']);
   const [isConnected, setIsConnected] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [isError, setIsError] = useState(false);
   const [connectedDevice, setConnectedDevice] = useState(null);
+  const scrollViewRef = React.useRef(null);
+  const lastReceivedRef = React.useRef({ data: '', timestamp: 0 });
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editIndex, setEditIndex] = useState(0);
+  const [editText, setEditText] = useState('');
+
+  const handleLongPress = (index) => {
+    setEditIndex(index);
+    setEditText(quickButtons[index]);
+    setEditModalVisible(true);
+  };
+
+  const saveEdit = () => {
+    if (editText && editText.trim()) {
+      const newButtons = [...quickButtons];
+      newButtons[editIndex] = editText.trim();
+      setQuickButtons(newButtons);
+    }
+    setEditModalVisible(false);
+  };
 
   useEffect(() => {
     const setupConnection = async () => {
       try {
-        // Use the device passed from the previous screen (already connected)
         setConnectedDevice(device);
         setIsConnected(true);
-        setLogs(prevLogs => [...prevLogs, { 
+        setLogs([{ 
           type: 'info', 
-          text: `Connected to ${device.name || 'Unknown Device'}` 
+          text: `Connected to ${device.name || 'Unknown Device'}`,
+          timestamp: new Date().toLocaleTimeString()
         }]);
 
-        // Discover services and characteristics
         console.log('Discovering services for device:', device.id);
         await device.discoverAllServicesAndCharacteristics();
         
-        setLogs(prevLogs => [...prevLogs, { 
+        setLogs(prev => [...prev, { 
           type: 'info', 
-          text: 'Services discovered' 
+          text: 'Services discovered',
+          timestamp: new Date().toLocaleTimeString()
         }]);
 
-        // Setup notification on TX characteristic
         const sub = device.monitorCharacteristicForService(
           BleService.NUS_SERVICE_UUID,
           BleService.NUS_TX_CHARACTERISTIC_UUID,
           (error, characteristic) => {
             if (error) {
               console.error('Notification error:', error);
-              setLogs(prevLogs => [...prevLogs, { 
-                type: 'error', 
-                text: `Notification error: ${error.message || 'Unknown error'}` 
-              }]);
               return;
             }
             
             if (characteristic?.value) {
               try {
                 const receivedData = atob(characteristic.value);
+                const now = Date.now();
+                
+                // Skip if same data received within 100ms
+                if (lastReceivedRef.current.data === receivedData && 
+                    now - lastReceivedRef.current.timestamp < 100) {
+                  return;
+                }
+                
+                lastReceivedRef.current = { data: receivedData, timestamp: now };
                 console.log('Received data:', receivedData);
-                setLogs(prevLogs => [...prevLogs, { 
-                  type: 'received', 
-                  text: receivedData.trim() 
-                }]);
+                setLogs(prev => {
+                  const newLogs = [...prev, { 
+                    type: 'received', 
+                    text: receivedData.trim(),
+                    timestamp: new Date().toLocaleTimeString()
+                  }];
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+                  return newLogs;
+                });
               } catch (decodeError) {
                 console.error('Base64 decode error:', decodeError);
-                setLogs(prevLogs => [...prevLogs, { 
-                  type: 'error', 
-                  text: 'Failed to decode received data' 
-                }]);
               }
-            } else {
-              console.warn('Characteristic value is null');
             }
           }
         );
         
         setSubscription(sub);
-        setLogs(prevLogs => [...prevLogs, { 
+        setLogs(prev => [...prev, { 
           type: 'info', 
-          text: 'Notifications enabled' 
+          text: 'Notifications enabled',
+          timestamp: new Date().toLocaleTimeString()
         }]);
 
       } catch (error) {
         console.error('Connection setup error:', error);
-        setLogs(prevLogs => [...prevLogs, { 
+        setLogs(prev => [...prev, { 
           type: 'error', 
-          text: `Setup failed: ${error.message || 'Unknown error'}` 
+          text: `Setup failed: ${error.message || 'Unknown error'}`,
+          timestamp: new Date().toLocaleTimeString()
         }]);
         setIsError(true);
         
-        // Don't navigate back immediately, let user see the error
         setTimeout(() => {
           Alert.alert('Connection Error', 
             `Failed to setup connection: ${error.message}`, 
@@ -106,46 +131,21 @@ const ConnectionScreen = ({ route, navigation }) => {
     setupConnection();
 
     return () => {
-      cleanup();
+      if (subscription) {
+        subscription.remove();
+      }
     };
-  }, [device.id, navigation]);
+  }, []);
 
   
-const disableNotifications = () => {
-  if (subscription) {
-
-    device.monitorCharacteristicForService();
-    subscription.remove();
-    subscription = null;
-    console.log("Notifications disabled");
-  }
-};
-
   const cleanup = async () => {
     try {
       if (subscription) {
-        console.log("Subscription object:", subscription);
-        // disableNotifications();
-        // subscription.remove();
-        // setSubscription(null);
-      //  subscription.unsubscribe(); // for RxJS-style subs
-      }
-      
-      if (connectedDevice && isConnected) {
-        console.log(`Disconnecting from device... ${connectedDevice.id}`);
-        // await BleService.disconnectDevice(connectedDevice.id);
-            //  await bleManager();
+        subscription.remove();
         setSubscription(null);
-        
-        console.log("Notifications disabled");
-            //  setConnectedDevice(null); // Clear the connected device from state
-        // await BleService.disconnectDevice(connectedDevice.id);
-
-        // await BleService.bleManager.cancelDeviceConnection(connectedDevice.id);
-        // await BleService.disconnectDevice(connectedDevice.id);
-                
-        // await BleService.bleManager.cancelDeviceConnection(connectedDevice.id);
-        console.log('Device disconnected');
+      }
+      if (device?.id) {
+        await BleService.disconnectDevice(device.id);
       }
     } catch (error) {
       console.error('Cleanup error:', error);
@@ -165,10 +165,18 @@ const disableNotifications = () => {
 
     try {
       const commandToSend = command.trim();
+      
+      setLogs(prevLogs => {
+        const newLogs = [...prevLogs, { 
+          type: 'sent', 
+          text: commandToSend,
+          timestamp: new Date().toLocaleTimeString()
+        }];
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        return newLogs;
+      });
+      
       const base64Data = btoa(commandToSend);
-      
-      console.log('Sending command:', commandToSend);
-      
       await BleService.writeCharacteristic(
         connectedDevice,
         BleService.NUS_SERVICE_UUID,
@@ -176,17 +184,12 @@ const disableNotifications = () => {
         base64Data
       );
       
-      setLogs(prevLogs => [...prevLogs, { 
-        type: 'sent', 
-        text: commandToSend 
-      }]);
-      setInputText('');
-      
     } catch (error) {
       console.error('Send error:', error);
       setLogs(prevLogs => [...prevLogs, { 
         type: 'error', 
-        text: `Send failed: ${error.message || 'Unknown error'}` 
+        text: `Send failed: ${error.message || 'Unknown error'}`,
+        timestamp: new Date().toLocaleTimeString()
       }]);
       Alert.alert('Send Error', error.message || 'Failed to send command');
     }
@@ -196,8 +199,8 @@ const disableNotifications = () => {
   useEffect(() => {
     const backAction = () => {
       Alert.alert(
-        "Exit",
-        "Are you sure you want to Move to scanning page?",
+        "Disconnect",
+        "Are you sure you want to disconnect and go back?",
         [
           {
             text: "Cancel",
@@ -206,11 +209,14 @@ const disableNotifications = () => {
           },
           {
             text: "YES",
-            onPress: () => navigation.goBack()
+            onPress: async () => {
+              await cleanup();
+              navigation.goBack();
+            }
           }
         ]
       );
-      return true; // prevent default back action
+      return true;
     };
 
     const backHandler = BackHandler.addEventListener(
@@ -230,16 +236,8 @@ const disconnect = () => {
     { 
       text: 'Yes', 
       onPress: async () => {
-        try {
-          await cleanup(); // Perform cleanup
-          setIsConnected(false); // Update connection state
-          setLogs(prevLogs => [...prevLogs, { type: 'info', text: 'Disconnected' }]);
-          // navigation.replace('Scanning'); // Navigate to Scanning screen
-        } catch (error) {
-          console.error('Disconnect error:', error);
-          setLogs(prevLogs => [...prevLogs, { type: 'error', text: `Disconnect failed: ${error.message}` }]);
-          Alert.alert('Disconnect Error', 'Failed to disconnect properly.');
-        }
+        await cleanup();
+        navigation.goBack();
       }
     },
   ]);
@@ -250,14 +248,14 @@ const disconnect = () => {
   };
 
   const renderLog = ({ item, index }) => (
-    <View key={index} style={styles.logItem}>
+    <View style={styles.logItem}>
       <Text style={[styles.logText, 
         item.type === 'sent' ? styles.sentText : 
         item.type === 'received' ? styles.receivedText : 
         item.type === 'error' ? styles.errorText : 
         item.type === 'info' ? styles.infoText : styles.warningText
       ]}>
-        [{new Date().toLocaleTimeString()}] {item.text}
+        [{item.timestamp}] {item.text}
       </Text>
     </View>
   );
@@ -283,6 +281,41 @@ const disconnect = () => {
 
   return (
     <View style={styles.container}>
+      <Modal
+        visible={editModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit CMD-{editIndex + 1}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editText}
+              onChangeText={setEditText}
+              placeholder="Enter command"
+              placeholderTextColor="#888"
+              autoFocus={true}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={saveEdit}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.appBar}>
         <Text style={styles.deviceName}>
           {device.name || 'Connected Device'}
@@ -303,26 +336,42 @@ const disconnect = () => {
         </Text>
       </View>
 
-      <FlatList
-        data={[...logs].reverse()}
-        renderItem={renderLog}
-        keyExtractor={(item, index) => `log-${index}`}
+      <ScrollView
+        ref={scrollViewRef}
         style={styles.logsContainer}
         contentContainerStyle={styles.logsContent}
         showsVerticalScrollIndicator={false}
-      />
+      >
+        <Text selectable={true}>
+          {logs.map((item, index) => (
+            <Text key={index} style={[
+              styles.logText,
+              item.type === 'sent' ? styles.sentText : 
+              item.type === 'received' ? styles.receivedText : 
+              item.type === 'error' ? styles.errorText : 
+              item.type === 'info' ? styles.infoText : styles.warningText
+            ]}>
+              [{item.timestamp}] {item.text}{"\n"}
+            </Text>
+          ))}
+        </Text>
+      </ScrollView>
 
-      <View style={styles.quickButtons}>
-        {quickButtons.map((btn, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.quickButton}
-            onPress={() => sendCommand(btn)}
-            disabled={!isConnected}
-          >
-            <Text style={styles.quickButtonText}>{btn}</Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.quickButtonsContainer}>
+        <Text style={styles.quickButtonsHint}>Long press to edit</Text>
+        <View style={styles.quickButtons}>
+          {quickButtons.map((btn, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.quickButton}
+              onPress={() => sendCommand(btn)}
+              onLongPress={() => handleLongPress(index)}
+              disabled={!isConnected}
+            >
+              <Text style={styles.quickButtonText}>CMD-{index + 1}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       <View style={styles.inputContainer}>
@@ -391,6 +440,7 @@ const styles = StyleSheet.create({
   },
   logsContent: {
     padding: 10,
+    paddingBottom: 20,
   },
   logItem: {
     marginBottom: 2,
@@ -404,17 +454,27 @@ const styles = StyleSheet.create({
   errorText: { color: '#F44336' },
   infoText: { color: '#FFC107' },
   warningText: { color: '#FF9800' },
+  quickButtonsContainer: {
+    backgroundColor: '#1C1C1C',
+    paddingTop: 5,
+  },
+  quickButtonsHint: {
+    color: '#888',
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 5,
+  },
   quickButtons: { 
     flexDirection: 'row', 
     justifyContent: 'space-around', 
-    padding: 10,
-    backgroundColor: '#1C1C1C',
+    paddingHorizontal: 10,
+    paddingBottom: 10,
   },
   quickButton: { 
     backgroundColor: '#333', 
     padding: 12, 
     borderRadius: 5,
-    minWidth: 60,
+    minWidth: 80,
     alignItems: 'center',
   },
   quickButtonText: { color: 'white', fontSize: 14 },
@@ -467,6 +527,53 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     minWidth: 150,
     alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1C1C1C',
+    borderRadius: 10,
+    padding: 20,
+    width: '80%',
+  },
+  modalTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
+  modalInput: {
+    backgroundColor: '#333',
+    color: 'white',
+    padding: 12,
+    borderRadius: 5,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  cancelButton: {
+    backgroundColor: '#555',
+  },
+  saveButton: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });
 
