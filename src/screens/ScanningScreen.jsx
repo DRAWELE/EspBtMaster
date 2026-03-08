@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import BleService from '../services/BleService';
+import PermissionsModal from '../components/PermissionsModal';
+import SystemSetting from 'react-native-system-setting';
 
 const ScanningScreen = () => {
   const navigation = useNavigation();
@@ -20,9 +22,15 @@ const ScanningScreen = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectingDeviceId, setConnectingDeviceId] = useState(null);
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
 
   useEffect(() => {
-    requestPermissions();
+    checkAndRequestPermissions();
+    
+    // Check permissions periodically
+    const permissionInterval = setInterval(() => {
+      checkPermissionsStatus();
+    }, 3000);
     
     const backAction = () => {
       Alert.alert(
@@ -44,51 +52,65 @@ const ScanningScreen = () => {
     return () => {
       BleService.stopScan();
       backHandler.remove();
+      clearInterval(permissionInterval);
     };
   }, []);
 
-  const requestPermissions = async () => {
+  const checkPermissionsStatus = async () => {
     if (Platform.OS === 'android') {
       try {
-        const permissions = [
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        ];
-
-        // Add Bluetooth permissions for Android 12+
-        if (Platform.Version >= 31) {
-          permissions.push(
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
-          );
-        }
-
-        const granted = await PermissionsAndroid.requestMultiple(permissions);
-
-        const allGranted = Object.values(granted).every(
-          permission => permission === PermissionsAndroid.RESULTS.GRANTED
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
 
-        if (allGranted) {
-          console.log('All permissions granted');
-          // Auto-start scanning
-          startScanning();
-        } else {
-          Alert.alert(
-            'Permissions Required', 
-            'Please grant all permissions to scan for devices',
-            [
-              { text: 'OK', onPress: () => console.log('Permissions denied') }
-            ]
-          );
+        const bleState = await BleService.bleManager.state();
+        
+        let gpsEnabled = false;
+        if (granted) {
+          try {
+            gpsEnabled = await SystemSetting.isLocationEnabled();
+          } catch (e) {
+            gpsEnabled = false;
+          }
+        }
+        
+        if (!granted || bleState !== 'PoweredOn' || !gpsEnabled) {
+          if (isScanning) {
+            stopScanning();
+          }
+          setShowPermissionsModal(true);
         }
       } catch (err) {
-        console.warn('Permission request error:', err);
-        Alert.alert('Error', 'Failed to request permissions');
+        console.warn('Permission check error:', err);
       }
-    } else {
-      // iOS - start scanning directly
-      startScanning();
+    }
+  };
+
+  const checkAndRequestPermissions = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+
+        const bleState = await BleService.bleManager.state();
+        
+        let gpsEnabled = false;
+        if (granted) {
+          try {
+            gpsEnabled = await SystemSetting.isLocationEnabled();
+          } catch (e) {
+            gpsEnabled = false;
+          }
+        }
+
+        if (!granted || bleState !== 'PoweredOn' || !gpsEnabled) {
+          setShowPermissionsModal(true);
+        }
+      } catch (err) {
+        console.warn('Permission check error:', err);
+        setShowPermissionsModal(true);
+      }
     }
   };
 
@@ -96,6 +118,28 @@ const ScanningScreen = () => {
     if (isScanning) return;
 
     try {
+      // Check permissions before scanning
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        const bleState = await BleService.bleManager.state();
+        
+        let gpsEnabled = false;
+        if (granted) {
+          try {
+            gpsEnabled = await SystemSetting.isLocationEnabled();
+          } catch (e) {
+            gpsEnabled = false;
+          }
+        }
+        
+        if (!granted || bleState !== 'PoweredOn' || !gpsEnabled) {
+          setShowPermissionsModal(true);
+          return;
+        }
+      }
+      
       setIsScanning(true);
       
       setDevices([]);
@@ -199,6 +243,13 @@ const ScanningScreen = () => {
 
   return (
     <View style={styles.container}>
+      <PermissionsModal
+        visible={showPermissionsModal}
+        onPermissionsGranted={() => {
+          setShowPermissionsModal(false);
+        }}
+      />
+      
       <View style={styles.header}>
         <Text style={styles.title}>BLE Scanner</Text>
         <Text style={styles.subtitle}>

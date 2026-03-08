@@ -13,3 +13,7 @@ adb logcat *:S ReactNative:V ReactNativeJS:V
 Run cocmmands:
 npm install
 npx react-native run-android 
+
+Clean & Build:
+cd android && gradlew clean && cd ..
+npm run android

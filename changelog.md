@@ -1,3 +1,22 @@
+changelog in v0.2.1
+
+Root: (Applied for all pages)
+- Removed system popups and added custom popups
+- Added cancel tap if user presses outside of border of popup
+
+Permission Page: (New)
+- Bluetooth, Location Permission, GPS permission detection
+- Added settings quick settings jumps on pressing on perticular permission
+- Auto page move while if any permission is disabled suddenly except Log page
+
+Logger Page:
+- Added MAC address under device name
+- Added Icons instead of text on top
+- Added blinking effect of Connected event
+- Bug fixed of Operation was cancelled
+
+----------------------------------------------------------------------------------
+
 changelog in v0.2.0
 
 Scanner Page:
